@@ -15,14 +15,25 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
   measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
 };
-console.log('Firebase Config:', process.env.NEXT_PUBLIC_FIREBASE_API_KEY);
 
-const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+const isBrowser = typeof window !== 'undefined';
+const hasClientFirebaseConfig = Boolean(
+  firebaseConfig.apiKey &&
+    firebaseConfig.authDomain &&
+    firebaseConfig.projectId &&
+    firebaseConfig.appId
+);
 
-const db = getFirestore(app);
-const auth = getAuth(app);
-const functions = getFunctions(app, 'asia-east1');
-const storage = getStorage(app);
+// Avoid initializing Firebase client SDK when env vars are missing.
+const app = isBrowser && hasClientFirebaseConfig
+  ? (!getApps().length ? initializeApp(firebaseConfig) : getApp())
+  : (null as any);
+
+// Avoid initializing browser SDK services during SSR/build-time evaluation.
+const db = app ? getFirestore(app) : (null as any);
+const auth = app ? getAuth(app) : (null as any);
+const functions = app ? getFunctions(app, 'asia-east1') : (null as any);
+const storage = app ? getStorage(app) : (null as any);
 
 export { app, db, auth, functions, storage }; // ✅ named exports
 export default db; // ✅ default export for dynamic import

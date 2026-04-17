@@ -6,9 +6,24 @@ import { getAuth, signOut } from 'firebase/auth';
 export default function Dashboard() {
   const router = useRouter();
   const options = [
-    { label: 'All Posts', href: '/posts' },
-    { label: 'All Comments', href: '/comments' },
-    { label: 'Create Post', href: '/create-post' },
+    {
+      label: 'Posts',
+      description: 'Review, edit, and moderate published content.',
+      href: '/posts',
+      icon: '📝',
+    },
+    {
+      label: 'Comments',
+      description: 'Moderate conversations and high-risk replies.',
+      href: '/comments',
+      icon: '💬',
+    },
+    {
+      label: 'Create Post',
+      description: 'Publish announcements and featured updates.',
+      href: '/create-post',
+      icon: '🚀',
+    },
   ];
 
   const handleLogout = async () => {
@@ -22,31 +37,40 @@ export default function Dashboard() {
   };
 
   return (
-      <>
-        <Head>
-          <title>Coinzy Admin Dashboard</title>
-        </Head>
-        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-pink-500 via-purple-700 to-orange-400 relative overflow-hidden">
-          <button
-              onClick={handleLogout}
-              className="absolute top-4 right-4 bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded"
-          >
-            Logout
-          </button>
-
-          <div className="z-10 bg-[#ffffff0f] backdrop-blur-md p-10 rounded-2xl w-full max-w-md shadow-xl text-white">
-            <h1 className="text-4xl font-bold text-gray-800 mb-12">📋 Admin Dashboard</h1>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 w-full max-w-3xl">
-              {options.map(({ label, href }) => (
-                  <Link href={href} key={label}>
-                    <div className="cursor-pointer bg-white p-6 rounded-xl shadow-md hover:shadow-lg transition-all border border-gray-200 text-center text-xl font-medium text-gray-700">
-                      {label}
-                    </div>
-                  </Link>
-              ))}
+    <>
+      <Head>
+        <title>Rockzy Admin Dashboard</title>
+      </Head>
+      <main className="premium-shell">
+        <div className="mx-auto max-w-6xl">
+          <div className="premium-card mb-6 flex flex-wrap items-center justify-between gap-4 p-6">
+            <div>
+              <h1 className="premium-title">Rockzy Dashboard</h1>
+              <p className="premium-subtitle">
+                Fast moderation controls with a cleaner, accessible workspace.
+              </p>
             </div>
+            <button onClick={handleLogout} className="danger-button">
+              Logout
+            </button>
           </div>
+
+          <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {options.map(({ label, description, href, icon }) => (
+              <Link href={href} key={label} className="group">
+                <article className="premium-card h-full p-6 transition hover:-translate-y-1 hover:border-indigo-400/40">
+                  <p className="mb-4 text-3xl">{icon}</p>
+                  <h2 className="mb-2 text-xl font-semibold text-white">{label}</h2>
+                  <p className="text-sm text-slate-300">{description}</p>
+                  <p className="mt-5 text-sm font-medium text-indigo-300 group-hover:text-indigo-200">
+                    Open section →
+                  </p>
+                </article>
+              </Link>
+            ))}
+          </section>
         </div>
-      </>
+      </main>
+    </>
   );
 }

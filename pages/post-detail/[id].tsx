@@ -28,7 +28,7 @@ export default function PostDetail() {
     setLoading(true);
 
     // Get reports
-    const reportSnap = await getDocs(collection(db, 'report'));
+    const reportSnap = await getDocs(collection(db, 'reports'));
     const reportData: Record<string, number> = {};
     reportSnap.docs.forEach(doc => {
       const r = doc.data();
@@ -39,7 +39,7 @@ export default function PostDetail() {
     setReportCounts(reportData);
 
     // Get post
-    const postDoc = await getDoc(doc(db, 'all-posts', postId));
+    const postDoc = await getDoc(doc(db, 'posts', postId));
     if (!postDoc.exists()) return;
     setPost({ id: postDoc.id, ...postDoc.data() });
 
@@ -71,7 +71,7 @@ export default function PostDetail() {
   const handleDelete = async (target: 'post' | 'comment' | 'reply', ids: string[]) => {
     if (!confirm(`Delete this ${target}?`)) return;
     if (target === 'post') {
-      await deleteDoc(doc(db, 'all-posts', ids[0]));
+      await deleteDoc(doc(db, 'posts', ids[0]));
       router.push('/posts');
     } else if (target === 'comment') {
       await deleteDoc(doc(db, 'comments', ids[0]));
@@ -82,9 +82,17 @@ export default function PostDetail() {
     }
   };
 
+  const getPostImages = (postData: any) => {
+    if (!postData) return [];
+    if (Array.isArray(postData.imageUrls) && postData.imageUrls.length > 0) return postData.imageUrls;
+    if (Array.isArray(postData.imageList) && postData.imageList.length > 0) return postData.imageList;
+    if (typeof postData.imageUrl === 'string' && postData.imageUrl.length > 0) return [postData.imageUrl];
+    return [];
+  };
+
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-white text-blue-600">
+      <div className="premium-shell flex items-center justify-center text-indigo-200">
         <div className="flex flex-col items-center">
           <svg className="animate-spin h-10 w-10" viewBox="0 0 24 24">
             <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
@@ -97,22 +105,22 @@ export default function PostDetail() {
   }
 
   return (
-    <div className="min-h-screen p-6 bg-gray-100">
-      <div className="bg-white p-6 rounded shadow-md">
-        <h1 className="text-3xl font-bold mb-2">{post.title}</h1>
-        <p className="text-sm text-gray-500">Post ID: {post.id}</p>
-        <p className="text-gray-700 my-2">{post.content}</p>
+    <main className="premium-shell">
+      <div className="premium-card p-6">
+        <h1 className="premium-title mb-2">{post.title}</h1>
+        <p className="text-sm text-slate-400">Post ID: {post.id}</p>
+        <p className="my-2 text-slate-200">{post.content}</p>
 
 
-        {Array.isArray(post.imageList) && post.imageList.length > 0 && (
+        {getPostImages(post).length > 0 && (
             <div className="mt-5 flex gap-4 flex-wrap">
-              {post.imageList.map((img: string, i: number) => (
+              {getPostImages(post).map((img: string, i: number) => (
                   <img
                       key={i}
                       src={img}
                       alt={`Post Image ${i + 1}`}
                       onError={(e) => (e.currentTarget.src = '/placeholder.png')}
-                      className="w-40 h-40 object-cover rounded border"
+                      className="h-40 w-40 rounded-xl border border-white/10 object-cover"
                   />
               ))}
             </div>
@@ -120,46 +128,46 @@ export default function PostDetail() {
 
 
 
-        <p>👍 Likes: {post.likeCount || 0}</p>
-        <p>🚩 Reports: {reportCounts[post.id] || 0}</p>
+        <p className="text-slate-200">Likes: {post.likeCount || 0}</p>
+        <p className="text-slate-300">Reports: {reportCounts[post.id] || 0}</p>
 
 
         <button
           onClick={() => handleDelete('post', [post.id])}
-          className="mt-4 bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700"
+          className="danger-button mt-4"
         >
           Delete Post
         </button>
       </div>
 
       <div className="mt-8 space-y-6">
-        <h2 className="text-2xl font-semibold">Comments</h2>
+        <h2 className="text-2xl font-semibold text-white">Comments</h2>
         {comments.map((comment: any) => (
-          <div key={comment.id} className="bg-white p-4 rounded shadow">
-            <p className="text-gray-800">💬 {comment.content}</p>
-            <p className="text-sm text-gray-500">
-              👍 {comment.likeCount || 0} | 🚩 {comment.reportCount}
+          <div key={comment.id} className="premium-card p-4">
+            <p className="text-slate-100">{comment.content}</p>
+            <p className="text-sm text-slate-400">
+              {comment.likeCount || 0} likes | {comment.reportCount} reports
             </p>
             <button
               onClick={() => handleDelete('comment', [comment.id])}
-              className="mt-2 bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600"
+              className="danger-button mt-2 px-3 py-1.5"
             >
               Delete Comment
             </button>
 
             {/* Replies */}
             {comment.replies.length > 0 && (
-              <div className="ml-4 mt-4 border-l-2 border-purple-300 pl-4">
-                <p className="font-medium">Replies:</p>
+              <div className="ml-4 mt-4 border-l-2 border-indigo-400/50 pl-4">
+                <p className="font-medium text-slate-200">Replies:</p>
                 {comment.replies.map((reply: any) => (
-                  <div key={reply.id} className="bg-gray-100 p-3 my-2 rounded">
-                    <p>{reply.content}</p>
-                    <p className="text-sm text-gray-600">
-                      👍 {reply.likeCount || 0} | 🚩 {reply.reportCount}
+                  <div key={reply.id} className="my-2 rounded-xl border border-white/10 bg-slate-900/80 p-3">
+                    <p className="text-slate-100">{reply.content}</p>
+                    <p className="text-sm text-slate-400">
+                      {reply.likeCount || 0} likes | {reply.reportCount} reports
                     </p>
                     <button
                       onClick={() => handleDelete('reply', [comment.id, reply.id])}
-                      className="mt-1 bg-red-500 text-white px-2 py-1 text-sm rounded hover:bg-red-600"
+                      className="danger-button mt-1 px-3 py-1.5 text-xs"
                     >
                       Delete Reply
                     </button>
@@ -170,6 +178,6 @@ export default function PostDetail() {
           </div>
         ))}
       </div>
-    </div>
+    </main>
   );
 }

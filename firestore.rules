@@ -1,0 +1,187 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    match /posts/{postId} {
+      allow read: if true;
+
+      allow create: if request.resource.data.userId is string
+        && request.resource.data.userId != ''
+        && request.resource.data.userName is string
+        && request.resource.data.content is string
+        && request.resource.data.createdAt != null
+        && request.resource.data.likes is list
+        && request.resource.data.comments is int
+        && request.resource.data.shares is int;
+
+      allow update: if request.resource.data.userId == resource.data.userId
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.userName == resource.data.userName;
+
+      allow delete: if true;
+
+      match /comments/{commentId} {
+        allow read: if true;
+        allow create: if request.resource.data.userId is string
+          && request.resource.data.userId != ''
+          && request.resource.data.userName is string
+          && request.resource.data.content is string
+          && request.resource.data.createdAt != null
+          && request.resource.data.likes is list;
+
+        allow update: if (resource.data.userId == request.resource.data.userId
+          && resource.data.userName == request.resource.data.userName
+          && resource.data.content == request.resource.data.content
+          && resource.data.createdAt == request.resource.data.createdAt
+          && request.resource.data.likes is list)
+          || (isAuthenticated() && resource.data.userId == request.auth.uid);
+
+        allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+
+        match /replies/{replyId} {
+          allow read: if true;
+          allow create: if request.resource.data.userId is string
+            && request.resource.data.userId != ''
+            && request.resource.data.userName is string
+            && request.resource.data.content is string
+            && request.resource.data.createdAt != null
+            && request.resource.data.likes is list;
+
+          allow update: if (resource.data.userId == request.resource.data.userId
+            && resource.data.userName == request.resource.data.userName
+            && resource.data.content == request.resource.data.content
+            && resource.data.createdAt == request.resource.data.createdAt
+            && request.resource.data.likes is list)
+            || (isAuthenticated() && resource.data.userId == request.auth.uid);
+
+          allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+        }
+      }
+    }
+
+    match /comments/{commentId} {
+      allow read: if true;
+
+      allow create: if request.resource.data.authorId is string
+        && request.resource.data.authorId != ''
+        && request.resource.data.author is string
+        && request.resource.data.content is string
+        && request.resource.data.postId is string
+        && request.resource.data.timestamp is int
+        && request.resource.data.likeCount == 0
+        && request.resource.data.likeList is list
+        && request.resource.data.replyCount == 0;
+
+      allow update: if request.resource.data.authorId == resource.data.authorId
+        && request.resource.data.content is string;
+
+      allow delete: if resource.data.authorId is string;
+    }
+
+    match /replies/{replyId} {
+      allow read: if true;
+
+      allow create: if request.resource.data.authorId is string
+        && request.resource.data.authorId != ''
+        && request.resource.data.author is string
+        && request.resource.data.content is string
+        && request.resource.data.commentId is string
+        && request.resource.data.postId is string
+        && request.resource.data.timestamp is int
+        && request.resource.data.likeCount == 0
+        && request.resource.data.likeList is list;
+
+      allow update: if request.resource.data.authorId == resource.data.authorId
+        && request.resource.data.content is string;
+
+      allow delete: if resource.data.authorId is string;
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if true;
+
+      allow create: if request.resource.data.userId is string
+        && request.resource.data.userId != ''
+        && request.resource.data.sourceUserId is string
+        && request.resource.data.postId is string
+        && request.resource.data.type is string
+        && request.resource.data.timestamp is int
+        && request.resource.data.read is bool;
+
+      allow update: if request.resource.data.userId == resource.data.userId
+        && resource.data.keys().hasAll(['read'])
+        && request.resource.data.read is bool;
+    }
+
+    match /users/{userId} {
+      allow read: if true;
+
+      allow create: if request.resource.data.bookmarkedPosts is list
+        && request.resource.data.keys().hasOnly(['bookmarkedPosts']);
+
+      allow update: if request.resource.data.bookmarkedPosts is list
+        && request.resource.data.keys().hasOnly(['bookmarkedPosts'])
+        && (!resource.exists || resource.data.keys().hasOnly(['bookmarkedPosts']));
+    }
+
+    match /users/{userId}/feedPreferences/{docId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    match /users/{userId}/notifications/{notificationId} {
+      allow read: if true;
+      allow create: if request.resource.data.type is string
+        && (request.resource.data.type == 'like'
+            || request.resource.data.type == 'comment'
+            || request.resource.data.type == 'follow')
+        && request.resource.data.actorUserId is string
+        && request.resource.data.actorUserId.size() > 0
+        && request.resource.data.actorUserName is string
+        && request.resource.data.createdAt is timestamp
+        && (
+          (request.resource.data.type == 'follow')
+          || (request.resource.data.postId is string && request.resource.data.postId.size() > 0)
+        );
+      allow update, delete: if false;
+    }
+
+    match /users/{userId}/followers/{followerId} {
+      allow read: if true;
+      allow create: if request.resource.data.createdAt is timestamp;
+      allow delete: if true;
+      allow update: if false;
+    }
+
+    match /reports/{reportId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated()
+        && request.resource.data.postId is string
+        && request.resource.data.reportedBy is string
+        && request.resource.data.reportedBy == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    // Legacy admin collections used by dashboard pages.
+    match /all-posts/{postId} {
+      allow read, create, update, delete: if isAuthenticated();
+    }
+
+    match /report/{reportId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if false;
+    }
+
+    match /app_config/{document=**} {
+      allow read: if true;
+      allow write: if false;
+    }
+  }
+}

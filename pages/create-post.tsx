@@ -3,7 +3,7 @@ import { collection, addDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db } from '../lib/firebase';
 import { storage } from '../lib/firebase';
-import { useRouter } from 'next/router';
+import Link from 'next/link';
 import { v4 as uuid } from 'uuid';
 
 export default function CreatePost() {
@@ -12,7 +12,6 @@ export default function CreatePost() {
   const [images, setImages] = useState<File[]>([]);
   const [loading, setLoading] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
-  const router = useRouter();
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -29,6 +28,10 @@ export default function CreatePost() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title || !content) return;
+    if (!db || !storage) {
+      alert('Firebase client is not configured. Check NEXT_PUBLIC_FIREBASE_* variables.');
+      return;
+    }
 
     setLoading(true);
     setSuccessMessage('');
@@ -43,15 +46,25 @@ export default function CreatePost() {
         imageUrls.push(url);
       }
 
-      await addDoc(collection(db, 'all-posts'), {
+      await addDoc(collection(db, 'posts'), {
         title,
         content,
+        caption: content,
+        imageUrl: imageUrls[0] ?? '',
+        imageUrls: imageUrls,
         imageList: imageUrls,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
         timestamp: Date.now(),
+        likes: [],
+        comments: 0,
+        shares: 0,
         likeCount: 0,
         commentCount: 0,
         likeList: [],
         stability: 0,
+        userId: 'rockzy_admin',
+        userName: 'Rockzy Official',
         user: {
           id: 'rockzy_admin',
           name: 'Rockzy Official',
@@ -74,12 +87,20 @@ export default function CreatePost() {
   };
 
   return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-pink-500 via-purple-700 to-orange-400 p-6">
-        <div className="bg-white p-6 rounded-lg shadow-md w-full max-w-2xl">
-          <h1 className="text-2xl font-bold mb-6 text-gray-800">📝 Create New Post</h1>
+      <main className="premium-shell flex items-center justify-center">
+        <div className="premium-card w-full max-w-3xl p-6 sm:p-8">
+          <div className="mb-4">
+            <Link href="/dashboard" className="premium-button-secondary">
+              ← Dashboard
+            </Link>
+          </div>
+          <h1 className="premium-title mb-2">Create a Rockzy Post</h1>
+          <p className="premium-subtitle mb-6">
+            Publish premium-quality updates with optional images.
+          </p>
 
           {loading ? (
-              <div className="flex flex-col items-center justify-center gap-4 text-blue-700">
+              <div className="flex flex-col items-center justify-center gap-4 text-indigo-300">
                 <svg className="animate-spin h-8 w-8" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
@@ -89,7 +110,7 @@ export default function CreatePost() {
           ) : (
               <>
                 {successMessage && (
-                    <div className="mb-4 text-green-600 font-medium">
+                    <div className="mb-4 rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-4 py-3 text-sm font-medium text-emerald-200">
                       {successMessage}
                     </div>
                 )}
@@ -99,35 +120,34 @@ export default function CreatePost() {
                       placeholder="Title"
                       value={title}
                       onChange={(e) => setTitle(e.target.value)}
-                      className="w-full px-4 py-2 border rounded"
+                      className="premium-input"
+                      required
                   />
                   <textarea
                       placeholder="Content"
                       value={content}
                       onChange={(e) => setContent(e.target.value)}
-                      className="w-full px-4 py-2 border rounded"
+                      className="premium-input min-h-40"
+                      required
                   />
                   <input
                       type="file"
                       accept="image/*"
                       multiple
                       onChange={handleImageChange}
-                      className="w-full"
+                      className="premium-input file:mr-4 file:rounded-lg file:border-0 file:bg-indigo-500 file:px-3 file:py-2 file:text-sm file:font-medium file:text-white"
                   />
-                  <p className="text-sm text-gray-500">
+                  <p className="text-sm text-slate-400">
                     {images.length}/2 image(s) selected
                   </p>
 
-                  <button
-                      type="submit"
-                      className="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700"
-                  >
+                  <button type="submit" className="premium-button">
                     Submit
                   </button>
                 </form>
               </>
           )}
         </div>
-      </div>
+      </main>
   );
 }

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { db } from '../lib/firebase';
 import {
   collection,
@@ -30,8 +31,13 @@ export default function Posts() {
 
   const [searchInput, setSearchInput] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [activeSortField, setActiveSortField] = useState<'createdAt' | 'timestamp'>('createdAt');
 
   useEffect(() => {
+    if (!db) {
+      setLoading(false);
+      return;
+    }
     if (searchTerm === '') {
       fetchFirstPage();
     } else {
@@ -40,44 +46,81 @@ export default function Posts() {
   }, [searchTerm]);
 
   const fetchFirstPage = async () => {
+    if (!db) return;
     setLoading(true);
-    const q = query(collection(db, 'all-posts'), orderBy('timestamp', 'desc'), limit(postsPerPage + 1));
-    const snapshot = await getDocs(q);
-    await processSnapshot(snapshot, true, true);
+    try {
+      const primaryQuery = query(
+        collection(db, 'posts'),
+        orderBy('createdAt', 'desc'),
+        limit(postsPerPage + 1)
+      );
+      const primarySnapshot = await getDocs(primaryQuery);
+
+      if (primarySnapshot.empty) {
+        const fallbackQuery = query(
+          collection(db, 'posts'),
+          orderBy('timestamp', 'desc'),
+          limit(postsPerPage + 1)
+        );
+        const fallbackSnapshot = await getDocs(fallbackQuery);
+        setActiveSortField('timestamp');
+        await processSnapshot(fallbackSnapshot, true, true);
+      } else {
+        setActiveSortField('createdAt');
+        await processSnapshot(primarySnapshot, true, true);
+      }
+    } catch (error) {
+      console.error('Failed to fetch posts:', error);
+      setPosts([]);
+      setLoading(false);
+    }
   };
 
   const fetchSearchResults = async (term) => {
+    if (!db) return;
     setLoading(true);
-    const snapshot = await getDocs(collection(db, 'all-posts'));
-    const filteredDocs = snapshot.docs.filter(doc =>
-        doc.data().title?.toLowerCase().includes(term.toLowerCase())
-    );
-    const fakeSnapshot = { docs: filteredDocs.slice(0, postsPerPage + 1) };
-    await processSnapshot(fakeSnapshot, true, true);
+    try {
+      const snapshot = await getDocs(collection(db, 'posts'));
+      const filteredDocs = snapshot.docs.filter(doc =>
+          doc.data().title?.toLowerCase().includes(term.toLowerCase())
+      );
+      const fakeSnapshot = { docs: filteredDocs.slice(0, postsPerPage + 1) };
+      await processSnapshot(fakeSnapshot, true, true);
+    } catch (error) {
+      console.error('Failed to search posts:', error);
+      setPosts([]);
+      setLoading(false);
+    }
   };
 
   const fetchPage = async (cursorDoc, direction = 'next') => {
-    if (!cursorDoc) return;
+    if (!cursorDoc || !db) return;
     setLoading(true);
 
     const q = query(
-        collection(db, 'all-posts'),
-        orderBy('timestamp', 'desc'),
+        collection(db, 'posts'),
+        orderBy(activeSortField, 'desc'),
         direction === 'next' ? startAfter(cursorDoc) : endBefore(cursorDoc),
         limit(postsPerPage + 1)
     );
 
-    const snapshot = await getDocs(q);
-    await processSnapshot(snapshot, direction === 'next');
+    try {
+      const snapshot = await getDocs(q);
+      await processSnapshot(snapshot, direction === 'next');
+    } catch (error) {
+      console.error('Failed to fetch paginated posts:', error);
+      setLoading(false);
+    }
   };
 
   const processSnapshot = async (snapshot, forward = true, isFirstPage = false) => {
+    if (!db) return;
     const docs = snapshot.docs;
     const hasExtra = docs.length > postsPerPage;
     const slicedDocs = hasExtra ? docs.slice(0, postsPerPage) : docs;
     const newHasMore = hasExtra;
 
-    const reportSnapshot = await getDocs(collection(db, 'report'));
+    const reportSnapshot = await getDocs(collection(db, 'reports'));
     const commentSnapshot = await getDocs(collection(db, 'comments'));
 
     const reportCounts = {};
@@ -132,9 +175,24 @@ export default function Posts() {
 
   const handleView = (id) => router.push(`/post-detail/${id}`);
 
+  const getPostDate = (post) => {
+    const value = post.createdAt ?? post.timestamp;
+    if (!value) return '-';
+    if (typeof value === 'number') return new Date(value).toLocaleString();
+    if (typeof value?.toDate === 'function') return value.toDate().toLocaleString();
+    return '-';
+  };
+
+  const getPostImages = (post) => {
+    if (Array.isArray(post.imageUrls) && post.imageUrls.length > 0) return post.imageUrls;
+    if (Array.isArray(post.imageList) && post.imageList.length > 0) return post.imageList;
+    if (typeof post.imageUrl === 'string' && post.imageUrl.length > 0) return [post.imageUrl];
+    return [];
+  };
+
   const handleUpdate = async () => {
-    if (!editingPost) return;
-    await updateDoc(doc(db, 'all-posts', editingPost.id), {
+    if (!editingPost || !db) return;
+    await updateDoc(doc(db, 'posts', editingPost.id), {
       title: updatedTitle,
       content: updatedContent,
     });
@@ -143,13 +201,14 @@ export default function Posts() {
   };
 
   const handleDelete = async (id) => {
+    if (!db) return;
     if (!confirm("Are you sure you want to delete this post?")) return;
-    await deleteDoc(doc(db, 'all-posts', id));
+    await deleteDoc(doc(db, 'posts', id));
     fetchFirstPage();
   };
 
   return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-pink-500 via-purple-700 to-orange-400 relative overflow-auto">
+      <main className="premium-shell relative overflow-auto">
         {loading ? (
             <div className="flex flex-col items-center justify-center gap-4 text-white mt-40">
               <svg className="animate-spin h-10 w-10 text-white" viewBox="0 0 24 24">
@@ -159,9 +218,14 @@ export default function Posts() {
               <p className="text-lg font-semibold">Loading posts...</p>
             </div>
         ) : (
-            <div className="max-w-7xl w-full bg-white rounded-xl p-6 shadow-lg">
+            <div className="premium-card mx-auto max-w-7xl w-full p-6">
+              <div className="mb-4 flex items-center justify-between">
+                <Link href="/dashboard" className="premium-button-secondary">
+                  ← Dashboard
+                </Link>
+              </div>
               <div className="flex justify-between items-center mb-4">
-                <h1 className="text-2xl font-bold text-gray-800">📄 All Posts</h1>
+                <h1 className="premium-title">Rockzy Posts</h1>
                 <div className="flex items-center gap-2">
                   <input
                       type="text"
@@ -173,55 +237,61 @@ export default function Posts() {
                           setSearchTerm('');
                         }
                       }}
-                      className="border px-2 py-1 rounded text-sm"
+                      className="premium-input py-2"
                   />
                   <button
                       onClick={() => setSearchTerm(searchInput.trim())}
-                      className="text-sm px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700"
+                      className="premium-button"
                   >
                     Search
                   </button>
                 </div>
               </div>
 
-              <table className="w-full border-collapse border">
+              {!db && (
+                <div className="mb-4 rounded-xl border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+                  Firebase client is not configured. Set `NEXT_PUBLIC_FIREBASE_*` environment variables.
+                </div>
+              )}
+
+              <table className="w-full border-collapse overflow-hidden rounded-xl border border-white/10 text-sm">
                 <thead>
-                <tr className="bg-gray-100 text-left">
-                  <th className="p-2 border">Title</th>
-                  <th className="p-2 border">Content</th>
-                  <th className="p-2 border">Images</th>
-                  <th className="p-2 border">Date</th>
-                  <th className="p-2 border">Reports</th>
-                  <th className="p-2 border">Likes</th>
-                  <th className="p-2 border">Comments</th>
-                  <th className="p-2 border">Actions</th>
+                <tr className="bg-slate-800/70 text-left text-slate-200">
+                  <th className="p-2 border border-white/10">Title</th>
+                  <th className="p-2 border border-white/10">Content</th>
+                  <th className="p-2 border border-white/10">Images</th>
+                  <th className="p-2 border border-white/10">Date</th>
+                  <th className="p-2 border border-white/10">Reports</th>
+                  <th className="p-2 border border-white/10">Likes</th>
+                  <th className="p-2 border border-white/10">Comments</th>
+                  <th className="p-2 border border-white/10">Actions</th>
                 </tr>
                 </thead>
                 <tbody>
                 {posts.map(post => (
-                    <tr key={post.id} className="hover:bg-gray-50 align-top">
-                      <td className="p-2 border">{post.title}</td>
-                      <td className="p-2 border">{post.content}</td>
-                      <td className="p-2 border">
-                        {post.imageList?.length > 0 ? (
+                    <tr key={post.id} className="align-top text-slate-200 hover:bg-slate-800/60">
+                      <td className="p-2 border border-white/10">{post.title}</td>
+                      <td className="p-2 border border-white/10">{post.content}</td>
+                      <td className="p-2 border border-white/10">
+                        {getPostImages(post).length > 0 ? (
                             <div className="flex flex-wrap gap-2">
-                              {post.imageList.map((url, index) => (
-                                  <img key={index} src={url} alt={`img-${index}`} className="w-16 h-16 object-cover rounded border" />
+                              {getPostImages(post).map((url, index) => (
+                                  <img key={index} src={url} alt={`img-${index}`} className="h-16 w-16 rounded-lg border border-white/10 object-cover" />
                               ))}
                             </div>
                         ) : (
-                            <span className="text-gray-400">No Images</span>
+                            <span className="text-slate-500">No Images</span>
                         )}
                       </td>
-                      <td className="p-2 border">{post.timestamp ? new Date(post.timestamp).toLocaleString() : '-'}</td>
-                      <td className="p-2 border">{post.reportCount}</td>
-                      <td className="p-2 border">{post.likeCount}</td>
-                      <td className="p-2 border">{post.commentCount}</td>
-                      <td className="p-2 border">
+                      <td className="p-2 border border-white/10">{getPostDate(post)}</td>
+                      <td className="p-2 border border-white/10">{post.reportCount}</td>
+                      <td className="p-2 border border-white/10">{post.likeCount}</td>
+                      <td className="p-2 border border-white/10">{post.commentCount}</td>
+                      <td className="p-2 border border-white/10">
                         <div className="flex gap-2">
-                          <button onClick={() => handleView(post.id)} className="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600">View</button>
-                          <button onClick={() => handleEdit(post)} className="bg-yellow-500 text-white px-3 py-1 rounded hover:bg-yellow-600">Edit</button>
-                          <button onClick={() => handleDelete(post.id)} className="bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700">Delete</button>
+                          <button onClick={() => handleView(post.id)} className="premium-button-secondary">View</button>
+                          <button onClick={() => handleEdit(post)} className="premium-button">Edit</button>
+                          <button onClick={() => handleDelete(post.id)} className="danger-button">Delete</button>
                         </div>
                       </td>
                     </tr>
@@ -236,7 +306,7 @@ export default function Posts() {
                       if (prevCursor) fetchPage(prevCursor, 'prev');
                     }}
                     disabled={currentPageIndex <= 1 || loading}
-                    className="px-4 py-2 rounded bg-blue-500 text-white disabled:opacity-50"
+                    className="premium-button"
                 >
                   Previous
                 </button>
@@ -246,37 +316,37 @@ export default function Posts() {
                       if (lastVisible) fetchPage(lastVisible, 'next');
                     }}
                     disabled={!hasMore || loading}
-                    className="px-4 py-2 rounded bg-blue-500 text-white disabled:opacity-50"
+                    className="premium-button"
                 >
                   Next
                 </button>
               </div>
 
               {editingPost && (
-                  <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
-                    <div className="bg-white p-6 rounded-lg w-full max-w-md shadow-xl space-y-4">
-                      <h2 className="text-lg font-bold mb-2">Edit Post</h2>
+                  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+                    <div className="premium-card w-full max-w-md space-y-4 p-6">
+                      <h2 className="text-lg font-bold text-white">Edit Post</h2>
                       <input
                           value={updatedTitle}
                           onChange={(e) => setUpdatedTitle(e.target.value)}
-                          className="w-full border p-2 rounded"
+                          className="premium-input"
                           placeholder="Title"
                       />
                       <textarea
                           value={updatedContent}
                           onChange={(e) => setUpdatedContent(e.target.value)}
-                          className="w-full border p-2 rounded"
+                          className="premium-input min-h-32"
                           placeholder="Content"
                       />
                       <div className="flex justify-end gap-2">
-                        <button onClick={() => setEditingPost(null)} className="px-4 py-1 rounded bg-gray-300 hover:bg-gray-400">Cancel</button>
-                        <button onClick={handleUpdate} className="px-4 py-1 rounded bg-blue-600 text-white hover:bg-blue-700">Save</button>
+                        <button onClick={() => setEditingPost(null)} className="premium-button-secondary">Cancel</button>
+                        <button onClick={handleUpdate} className="premium-button">Save</button>
                       </div>
                     </div>
                   </div>
               )}
             </div>
         )}
-      </div>
+      </main>
   );
 }

@@ -2,7 +2,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
-import { adminApp } from '../../lib/firebaseAdmin'; // ✅ Make sure this path is correct
+import { adminApp } from '../../lib/firebaseAdmin';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
     try {
@@ -29,9 +29,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
         return res.status(200).json({ isAdmin: !adminSnap.empty });
     } catch (err: any) {
-
-        console.error('🔥 Error in check-admin API:', JSON.stringify(err, null, 2));
-
-        return res.status(500).json({ error: 'Internal server error', detail: err.message });
+        console.error('Error in check-admin API route.', err);
+        return res.status(500).json({
+            error: 'Internal server error',
+            detail: err instanceof Error ? err.message : 'Unknown error',
+        });
     }
 }

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import {
     collection,
     getDocs,
@@ -96,7 +97,7 @@ export default function Comments() {
         const slicedDocs = hasExtra ? docs.slice(0, commentsPerPage) : docs;
         const newHasMore = hasExtra;
 
-        const reportSnapshot = await getDocs(collection(db, 'report'));
+        const reportSnapshot = await getDocs(collection(db, 'reports'));
         const replyReportCounts = {};
         const commentReportCounts = {};
 
@@ -170,7 +171,7 @@ export default function Comments() {
     };
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-pink-500 via-purple-700 to-orange-400 overflow-auto">
+        <main className="premium-shell overflow-auto">
             {loading ? (
                 <div className="flex flex-col items-center justify-center gap-4 text-white mt-40">
                     <svg className="animate-spin h-10 w-10 text-white" viewBox="0 0 24 24">
@@ -180,12 +181,17 @@ export default function Comments() {
                     <p className="text-lg font-semibold">Loading comments...</p>
                 </div>
             ) : (
-                <div className="max-w-7xl w-full bg-white rounded-xl p-6 shadow-lg">
+                <div className="premium-card mx-auto max-w-7xl w-full p-6">
+                    <div className="mb-4 flex items-center justify-between">
+                        <Link href="/dashboard" className="premium-button-secondary">
+                            ← Dashboard
+                        </Link>
+                    </div>
                     <div className="flex justify-between items-center mb-6">
-                        <h1 className="text-2xl font-bold text-gray-800">💬 All Comments & Replies</h1>
+                        <h1 className="premium-title">Rockzy Comments & Replies</h1>
                         <div className="flex gap-4 items-center">
-                            <span className="text-sm text-gray-600">Total Comments: {totalCount}</span>
-                            <label className="flex items-center gap-1 text-sm">
+                            <span className="text-sm text-slate-300">Total Comments: {totalCount}</span>
+                            <label className="flex items-center gap-1 text-sm text-slate-200">
                                 <input
                                     type="checkbox"
                                     checked={reportedOnly}
@@ -198,11 +204,11 @@ export default function Comments() {
                                 placeholder="Search by content"
                                 value={searchInput}
                                 onChange={(e) => setSearchInput(e.target.value)}
-                                className="border px-2 py-1 rounded text-sm"
+                                className="premium-input"
                             />
                             <button
                                 onClick={handleSearch}
-                                className="text-sm px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700"
+                                className="premium-button"
                             >
                                 Search
                             </button>
@@ -210,35 +216,35 @@ export default function Comments() {
                     </div>
 
                     {comments.map(comment => (
-                        <div key={comment.id} className="mb-10 border rounded p-4 shadow">
+                        <div key={comment.id} className="mb-10 rounded-xl border border-white/10 bg-slate-900/60 p-4 shadow">
                             <div className="mb-2">
-                                <p className="font-semibold">Post ID: {comment.postId}</p>
-                                <p className="text-gray-700">Comment: {comment.content}</p>
-                                <p className="text-sm text-gray-500">
+                                <p className="font-semibold text-slate-100">Post ID: {comment.postId}</p>
+                                <p className="text-slate-200">Comment: {comment.content}</p>
+                                <p className="text-sm text-slate-400">
                                     User: {comment.user?.name || 'Anonymous'} | {new Date(comment.timestamp).toLocaleString()}
                                 </p>
-                                <p className="text-xs text-gray-500">🚩 Reports: {comment.reportCount}</p>
+                                <p className="text-xs text-slate-400">Reports: {comment.reportCount}</p>
                                 <button
                                     onClick={() => handleDeleteComment(comment.id)}
-                                    className="mt-2 bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700"
+                                    className="danger-button mt-2"
                                 >
                                     Delete Comment
                                 </button>
                             </div>
 
                             {comment.replies.length > 0 && (
-                                <div className="ml-6 mt-4 border-l-4 border-purple-300 pl-4">
-                                    <p className="font-medium mb-2">Replies (sorted by reports):</p>
-                                    {comment.replies.map(reply => (
-                                        <div key={reply.id} className="mb-3 border p-3 rounded shadow-sm bg-gray-50">
-                                            <p className="text-sm">💬 {reply.content}</p>
-                                            <p className="text-xs text-gray-500">
-                                                👤 {reply.user?.name || 'Anonymous'} | 🕒 {new Date(reply.timestamp).toLocaleString()}
+                                <div className="ml-6 mt-4 border-l-2 border-indigo-400/40 pl-4">
+                                    <p className="mb-2 font-medium text-slate-200">Replies (sorted by reports):</p>
+                                    {comment.replies.map((reply) => (
+                                        <div key={reply.id} className="mb-3 rounded-xl border border-white/10 bg-slate-800/70 p-3 shadow-sm">
+                                            <p className="text-sm text-slate-100">{reply.content}</p>
+                                            <p className="text-xs text-slate-400">
+                                                {reply.user?.name || 'Anonymous'} | {new Date(reply.timestamp).toLocaleString()}
                                             </p>
-                                            <p className="text-xs text-gray-500">🚩 Reports: {reply.reportCount}</p>
+                                            <p className="text-xs text-slate-400">Reports: {reply.reportCount}</p>
                                             <button
                                                 onClick={() => handleDeleteReply(comment.id, reply.id)}
-                                                className="mt-1 bg-red-500 text-white px-2 py-1 text-xs rounded hover:bg-red-600"
+                                                className="danger-button mt-1 px-3 py-1.5 text-xs"
                                             >
                                                 Delete Reply
                                             </button>
@@ -256,12 +262,12 @@ export default function Comments() {
                                 if (prevCursor) fetchPage(prevCursor, 'prev');
                             }}
                             disabled={currentPageIndex <= 1 || loading}
-                            className="px-4 py-2 rounded bg-blue-500 text-white disabled:opacity-50"
+                            className="premium-button"
                         >
                             Previous
                         </button>
 
-                        <span className="text-sm text-gray-700">Page {currentPageIndex}</span>
+                        <span className="text-sm text-slate-300">Page {currentPageIndex}</span>
 
                         <button
                             onClick={() => {
@@ -269,13 +275,13 @@ export default function Comments() {
                                 if (lastVisible) fetchPage(lastVisible, 'next');
                             }}
                             disabled={!hasMore || loading}
-                            className="px-4 py-2 rounded bg-blue-500 text-white disabled:opacity-50"
+                            className="premium-button"
                         >
                             Next
                         </button>
                     </div>
                 </div>
             )}
-        </div>
+        </main>
     );
 }
