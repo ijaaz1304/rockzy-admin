@@ -1,0 +1,69 @@
+
+  runConfig:
+    minInstances: 0
+
+  environment:
+    - variable: NEXT_PUBLIC_API_URL
+      value: https://rockzy-admin--minerals-app-480613.us-central1.hosted.app/api
+      availability:
+        - BUILD
+        - RUNTIME
+
+    - variable: NEXT_PUBLIC_CHECK_ADMIN_URL
+      value: https://us-central1-minerals-app-480613.cloudfunctions.net/checkAdmin
+      availability:
+        - BUILD
+        - RUNTIME
+
+    - variable: NEXT_PUBLIC_FIREBASE_API_KEY
+      value: "AIzaSyA9fTQhjDfMGIBh7e5CZRq5-Y7QSAdM_eI"
+      availability:
+        - BUILD
+        - RUNTIME
+
+    - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+      value: minerals-app-480613.firebaseapp.com
+      availability:
+        - BUILD
+        - RUNTIME
+
+    - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
+      value: minerals-app-480613
+      availability:
+        - BUILD
+        - RUNTIME
+
+    - variable: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+      value: minerals-app-480613.firebasestorage.app
+      availability:
+        - BUILD
+        - RUNTIME
+
+    - variable: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+      value: "33731933586"
+      availability:
+        - BUILD
+        - RUNTIME
+
+    - variable: NEXT_PUBLIC_FIREBASE_APP_ID
+      value: 1:33731933586:web:84ca6507a19608e6f5fd4b
+      availability:
+        - BUILD
+        - RUNTIME
+
+    - variable: NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID
+      value: G-SNQ0NYY38K
+      availability:
+        - BUILD
+        - RUNTIME
+
+    - variable: FIREBASE_CLIENT_EMAIL
+      value: ""
+      availability:
+        - RUNTIME
+
+    - variable: FIREBASE_PRIVATE_KEY
+      value: ""
+      availability:
+        - RUNTIME
+
