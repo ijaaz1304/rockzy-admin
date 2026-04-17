@@ -6,6 +6,17 @@ import { getFirestore } from 'firebase/firestore';
 import { getFunctions } from 'firebase/functions';
 import { getStorage } from 'firebase/storage';
 
+const requiredClientFirebaseEnvVars = [
+  'NEXT_PUBLIC_FIREBASE_API_KEY',
+  'NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN',
+  'NEXT_PUBLIC_FIREBASE_PROJECT_ID',
+  'NEXT_PUBLIC_FIREBASE_APP_ID',
+] as const;
+
+const missingClientFirebaseEnvVars = requiredClientFirebaseEnvVars.filter(
+  (key) => !process.env[key]
+);
+
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
@@ -17,12 +28,7 @@ const firebaseConfig = {
 };
 
 const isBrowser = typeof window !== 'undefined';
-const hasClientFirebaseConfig = Boolean(
-  firebaseConfig.apiKey &&
-    firebaseConfig.authDomain &&
-    firebaseConfig.projectId &&
-    firebaseConfig.appId
-);
+const hasClientFirebaseConfig = missingClientFirebaseEnvVars.length === 0;
 
 // Avoid initializing Firebase client SDK when env vars are missing.
 const app = isBrowser && hasClientFirebaseConfig
@@ -36,4 +42,5 @@ const functions = app ? getFunctions(app, 'asia-east1') : (null as any);
 const storage = app ? getStorage(app) : (null as any);
 
 export { app, db, auth, functions, storage }; // ✅ named exports
+export { hasClientFirebaseConfig, missingClientFirebaseEnvVars };
 export default db; // ✅ default export for dynamic import

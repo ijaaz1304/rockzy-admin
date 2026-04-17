@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 
 import { signInWithEmailAndPassword } from 'firebase/auth';
-import { auth } from '../lib/firebase';
+import { auth, missingClientFirebaseEnvVars } from '../lib/firebase';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -25,8 +25,11 @@ export default function LoginPage() {
 
     try {
       if (!auth) {
+        const missingVars = missingClientFirebaseEnvVars.join(', ');
         throw new Error(
-          'Firebase client config is missing. Set NEXT_PUBLIC_FIREBASE_* variables for the frontend.'
+          missingVars
+            ? `Firebase client config is missing: ${missingVars}. Add them to your deployment environment and rebuild/redeploy the app.`
+            : 'Firebase client config is missing. Set NEXT_PUBLIC_FIREBASE_* variables for the frontend and rebuild/redeploy the app.'
         );
       }
 
