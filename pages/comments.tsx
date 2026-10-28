@@ -1,48 +1,23 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import {
-    collection,
-    getDocs,
-    deleteDoc,
-    doc,
-    query,
-    orderBy,
-    limit,
-    startAfter,
-    endBefore,
-} from 'firebase/firestore';
+import { onAuthStateChanged } from 'firebase/auth';
+import { adminFetch } from '../lib/adminFetch';
+import { auth } from '../lib/firebase';
+import ThemeToggle from '../components/ThemeToggle';
 
 export default function Comments() {
-    const commentsPerPage = 10;
-    const [db, setDb] = useState(null);
     const [comments, setComments] = useState([]);
-    const [pageSnapshots, setPageSnapshots] = useState([]);
+    const [pageStarts, setPageStarts] = useState<string[]>([]);
+    const [lastId, setLastId] = useState<string | null>(null);
     const [currentPageIndex, setCurrentPageIndex] = useState(0);
     const [hasMore, setHasMore] = useState(true);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState('');
+    const [selected, setSelected] = useState<string[]>([]);
     const [reportedOnly, setReportedOnly] = useState(false);
     const [totalCount, setTotalCount] = useState(0);
     const [searchTerm, setSearchTerm] = useState('');
     const [searchInput, setSearchInput] = useState('');
-
-    // Dynamically import firebase only in browser
-    useEffect(() => {
-        if (typeof window !== 'undefined') {
-            import('../lib/firebase').then(({ db }) => {
-                setDb(db);
-            });
-        }
-    }, []);
-
-    useEffect(() => {
-        if (!db) return;
-        if (searchTerm === '') {
-            fetchFirstPage();
-        } else {
-            fetchSearchResults(searchTerm);
-        }
-        fetchTotalCount();
-    }, [db, reportedOnly, searchTerm]);
 
     useEffect(() => {
         if (searchInput === '') {
@@ -50,120 +25,134 @@ export default function Comments() {
         }
     }, [searchInput]);
 
-    const fetchTotalCount = async () => {
-        const snapshot = await getDocs(collection(db, 'comments'));
-        setTotalCount(snapshot.size);
-    };
+    useEffect(() => {
+        if (!auth) {
+            setError('Firebase client is not configured.');
+            setLoading(false);
+            return;
+        }
 
-    const fetchFirstPage = async () => {
-        setLoading(true);
-        const q = query(
-            collection(db, 'comments'),
-            orderBy('timestamp', 'desc'),
-            limit(commentsPerPage + 1)
-        );
-        const snapshot = await getDocs(q);
-        await processSnapshot(snapshot, true, true);
-    };
-
-    const fetchSearchResults = async (term) => {
-        setLoading(true);
-        const snapshot = await getDocs(collection(db, 'comments'));
-        const filteredDocs = snapshot.docs.filter(doc =>
-            doc.data().content?.toLowerCase().includes(term.toLowerCase())
-        );
-        const fakeSnapshot = { docs: filteredDocs.slice(0, commentsPerPage + 1) };
-        await processSnapshot(fakeSnapshot, true, true);
-    };
-
-    const fetchPage = async (cursorDoc, direction = 'next') => {
-        if (!cursorDoc || !db) return;
-        setLoading(true);
-
-        const q = query(
-            collection(db, 'comments'),
-            orderBy('timestamp', 'desc'),
-            direction === 'next' ? startAfter(cursorDoc) : endBefore(cursorDoc),
-            limit(commentsPerPage + 1)
-        );
-
-        const snapshot = await getDocs(q);
-        await processSnapshot(snapshot, direction === 'next');
-    };
-
-    const processSnapshot = async (snapshot, forward = true, isFirstPage = false) => {
-        const docs = snapshot.docs;
-        const hasExtra = docs.length > commentsPerPage;
-        const slicedDocs = hasExtra ? docs.slice(0, commentsPerPage) : docs;
-        const newHasMore = hasExtra;
-
-        const reportSnapshot = await getDocs(collection(db, 'reports'));
-        const replyReportCounts = {};
-        const commentReportCounts = {};
-
-        reportSnapshot.docs.forEach(doc => {
-            const data = doc.data();
-            if (data.type === 'reply' && data.targetId) {
-                replyReportCounts[data.targetId] = (replyReportCounts[data.targetId] || 0) + 1;
-            } else if (data.type === 'comment' && data.targetId) {
-                commentReportCounts[data.targetId] = (commentReportCounts[data.targetId] || 0) + 1;
+        const unsubscribe = onAuthStateChanged(auth, (user) => {
+            if (!user) {
+                setComments([]);
+                setError('Sign in again to load comments.');
+                setLoading(false);
+                return;
             }
+            loadComments({ search: searchTerm, reportedOnly, forward: true, isFirstPage: true });
         });
 
-        const commentsData = [];
+        return unsubscribe;
+    }, [reportedOnly, searchTerm]);
 
-        for (const docSnap of slicedDocs) {
-            const commentData = { id: docSnap.id, ...docSnap.data() };
-
-            const repliesSnapshot = await getDocs(collection(db, 'comments', docSnap.id, 'replies'));
-            const replies = repliesSnapshot.docs.map(replyDoc => ({
-                id: replyDoc.id,
-                ...replyDoc.data(),
-                reportCount: replyReportCounts[replyDoc.id] || 0,
-            })).sort((a, b) => b.reportCount - a.reportCount);
-
-            const reportCount = commentReportCounts[commentData.id] || 0;
-
-            if (!reportedOnly || reportCount > 0) {
-                commentsData.push({
-                    ...commentData,
-                    replies,
-                    reportCount,
-                });
+    const loadComments = async ({
+        search = '',
+        reportedOnly: onlyReported = false,
+        cursor = '',
+        direction = 'next',
+        forward = true,
+        isFirstPage = false,
+    }: {
+        search?: string;
+        reportedOnly?: boolean;
+        cursor?: string;
+        direction?: 'next' | 'prev';
+        forward?: boolean;
+        isFirstPage?: boolean;
+    }) => {
+        setLoading(true);
+        setError('');
+        try {
+            const params = new URLSearchParams();
+            if (search) params.set('search', search);
+            if (onlyReported) params.set('reportedOnly', '1');
+            if (cursor) {
+                params.set('cursor', cursor);
+                params.set('direction', direction);
             }
-        }
+            const data = await adminFetch<{
+                comments: never[];
+                totalCount?: number;
+                lastId?: string | null;
+                firstId?: string | null;
+                hasMore?: boolean;
+            }>(`/api/comments/?${params}`);
 
-        commentsData.sort((a, b) => b.reportCount - a.reportCount);
-        setComments(commentsData);
+            setComments(data.comments || []);
+            setSelected([]);
+            setTotalCount(data.totalCount || 0);
+            setLastId(data.lastId || null);
+            setHasMore(Boolean(data.hasMore));
 
-        if (forward) {
-            if (!isFirstPage) {
-                setPageSnapshots(prev => [...prev, slicedDocs[slicedDocs.length - 1]]);
-                setCurrentPageIndex(prev => prev + 1);
+            if (forward) {
+                if (isFirstPage) {
+                    setPageStarts(data.firstId ? [data.firstId] : []);
+                    setCurrentPageIndex(data.firstId ? 1 : 0);
+                } else if (data.firstId) {
+                    setPageStarts((prev) => [...prev, data.firstId]);
+                    setCurrentPageIndex((prev) => prev + 1);
+                }
             } else {
-                setPageSnapshots([slicedDocs[slicedDocs.length - 1]]);
-                setCurrentPageIndex(1);
+                setPageStarts((prev) => prev.slice(0, -1));
+                setCurrentPageIndex((prev) => Math.max(prev - 1, 1));
+                setHasMore(true);
             }
-            setHasMore(newHasMore);
-        } else {
-            setCurrentPageIndex(prev => Math.max(prev - 1, 1));
-            setPageSnapshots(prev => prev.slice(0, prev.length - 1));
-            setHasMore(true);
+        } catch (fetchError) {
+            console.error('Failed to fetch comments:', fetchError);
+            setComments([]);
+            setError(fetchError instanceof Error ? fetchError.message : 'Failed to load comments');
+        } finally {
+            setLoading(false);
         }
-
-        setLoading(false);
     };
+
+    const refresh = () => loadComments({ search: searchTerm, reportedOnly, forward: true, isFirstPage: true });
 
     const handleDeleteComment = async (id) => {
         if (!confirm('Delete this comment?')) return;
-        await deleteDoc(doc(db, 'comments', id));
-        fetchFirstPage();
+        try {
+            await adminFetch(`/api/comments/?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+            refresh();
+        } catch (deleteError) {
+            setError(deleteError instanceof Error ? deleteError.message : 'Failed to delete comment');
+        }
     };
 
     const handleDeleteReply = async (commentId, replyId) => {
         if (!confirm('Delete this reply?')) return;
-        await deleteDoc(doc(db, 'comments', commentId, 'replies', replyId));
-        fetchFirstPage();
+        try {
+            const params = new URLSearchParams({ id: commentId, replyId });
+            await adminFetch(`/api/comments/?${params}`, { method: 'DELETE' });
+            refresh();
+        } catch (deleteError) {
+            setError(deleteError instanceof Error ? deleteError.message : 'Failed to delete reply');
+        }
+    };
+
+    const visibleIds = comments.map((comment) => comment.id);
+    const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selected.includes(id));
+
+    const toggleAll = () => {
+        setSelected(allSelected ? [] : visibleIds);
+    };
+
+    const toggleOne = (id) => {
+        setSelected((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+    };
+
+    const handleBulkDelete = async () => {
+        if (selected.length === 0) return;
+        if (!confirm(`Delete ${selected.length} selected comment${selected.length === 1 ? '' : 's'}?`)) return;
+        try {
+            await adminFetch('/api/comments/', {
+                method: 'DELETE',
+                body: JSON.stringify({ ids: selected }),
+            });
+            setSelected([]);
+            refresh();
+        } catch (deleteError) {
+            setError(deleteError instanceof Error ? deleteError.message : 'Failed to delete comments');
+        }
     };
 
     const handleSearch = () => {
@@ -173,8 +162,8 @@ export default function Comments() {
     return (
         <main className="premium-shell overflow-auto">
             {loading ? (
-                <div className="flex flex-col items-center justify-center gap-4 text-white mt-40">
-                    <svg className="animate-spin h-10 w-10 text-white" viewBox="0 0 24 24">
+                <div className="mt-40 flex flex-col items-center justify-center gap-4">
+                    <svg className="h-10 w-10 animate-spin text-accent" viewBox="0 0 24 24">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
                     </svg>
@@ -182,17 +171,25 @@ export default function Comments() {
                 </div>
             ) : (
                 <div className="premium-card mx-auto max-w-7xl w-full p-6">
-                    <div className="mb-4 flex items-center justify-between">
+                    <div className="page-toolbar">
                         <Link href="/dashboard" className="premium-button-secondary">
                             ← Dashboard
                         </Link>
+                        <ThemeToggle />
                     </div>
-                    <div className="flex justify-between items-center mb-6">
-                        <h1 className="premium-title">Rockzy Comments & Replies</h1>
-                        <div className="flex gap-4 items-center">
-                            <span className="text-sm text-slate-300">Total Comments: {totalCount}</span>
-                            <label className="flex items-center gap-1 text-sm text-slate-200">
+                    <div className="page-toolbar">
+                        <div>
+                            <h1 className="premium-title">Rockzy Comments & Replies</h1>
+                            <p className="premium-subtitle">Total comments: {totalCount}</p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-3">
+                            <label className="flex items-center gap-2 text-sm">
+                                <input className="check" type="checkbox" checked={allSelected} onChange={toggleAll} />
+                                Select page
+                            </label>
+                            <label className="flex items-center gap-2 text-sm">
                                 <input
+                                    className="check"
                                     type="checkbox"
                                     checked={reportedOnly}
                                     onChange={() => setReportedOnly(prev => !prev)}
@@ -215,15 +212,32 @@ export default function Comments() {
                         </div>
                     </div>
 
+                    {error && <div className="notice">{error}</div>}
+
+                    {selected.length > 0 && (
+                        <div className="bulk-bar">
+                            <span className="text-sm font-medium">{selected.length} selected</span>
+                            <button onClick={handleBulkDelete} className="danger-button">Delete selected</button>
+                        </div>
+                    )}
+
                     {comments.map(comment => (
-                        <div key={comment.id} className="mb-10 rounded-xl border border-white/10 bg-slate-900/60 p-4 shadow">
+                        <div key={comment.id} className={`panel mb-4 p-4 ${selected.includes(comment.id) ? 'ring-2 ring-indigo-400/40' : ''}`}>
                             <div className="mb-2">
-                                <p className="font-semibold text-slate-100">Post ID: {comment.postId}</p>
-                                <p className="text-slate-200">Comment: {comment.content}</p>
-                                <p className="text-sm text-slate-400">
-                                    User: {comment.user?.name || 'Anonymous'} | {new Date(comment.timestamp).toLocaleString()}
+                                <label className="mb-2 flex items-center gap-2 text-sm font-medium">
+                                    <input
+                                        className="check"
+                                        type="checkbox"
+                                        checked={selected.includes(comment.id)}
+                                        onChange={() => toggleOne(comment.id)}
+                                    />
+                                    Post ID: {comment.postId}
+                                </label>
+                                <p>{comment.content}</p>
+                                <p className="text-sm text-muted">
+                                    User: {comment.user?.name || 'Anonymous'} | {comment.timestamp ? new Date(comment.timestamp).toLocaleString() : '-'}
                                 </p>
-                                <p className="text-xs text-slate-400">Reports: {comment.reportCount}</p>
+                                <p className="text-xs text-faint">Reports: {comment.reportCount}</p>
                                 <button
                                     onClick={() => handleDeleteComment(comment.id)}
                                     className="danger-button mt-2"
@@ -233,15 +247,15 @@ export default function Comments() {
                             </div>
 
                             {comment.replies.length > 0 && (
-                                <div className="ml-6 mt-4 border-l-2 border-indigo-400/40 pl-4">
-                                    <p className="mb-2 font-medium text-slate-200">Replies (sorted by reports):</p>
+                                <div className="ml-6 mt-4 border-l-2 pl-4" style={{ borderColor: 'var(--accent)' }}>
+                                    <p className="mb-2 font-medium">Replies (sorted by reports):</p>
                                     {comment.replies.map((reply) => (
-                                        <div key={reply.id} className="mb-3 rounded-xl border border-white/10 bg-slate-800/70 p-3 shadow-sm">
-                                            <p className="text-sm text-slate-100">{reply.content}</p>
-                                            <p className="text-xs text-slate-400">
-                                                {reply.user?.name || 'Anonymous'} | {new Date(reply.timestamp).toLocaleString()}
+                                        <div key={reply.id} className="panel-2 mb-3 p-3">
+                                            <p className="text-sm">{reply.content}</p>
+                                            <p className="text-xs text-muted">
+                                                {reply.user?.name || 'Anonymous'} | {reply.timestamp ? new Date(reply.timestamp).toLocaleString() : '-'}
                                             </p>
-                                            <p className="text-xs text-slate-400">Reports: {reply.reportCount}</p>
+                                            <p className="text-xs text-faint">Reports: {reply.reportCount}</p>
                                             <button
                                                 onClick={() => handleDeleteReply(comment.id, reply.id)}
                                                 className="danger-button mt-1 px-3 py-1.5 text-xs"
@@ -258,8 +272,16 @@ export default function Comments() {
                     <div className="mt-6 flex items-center justify-between">
                         <button
                             onClick={() => {
-                                const prevCursor = pageSnapshots[currentPageIndex - 2];
-                                if (prevCursor) fetchPage(prevCursor, 'prev');
+                                const prevCursor = pageStarts[currentPageIndex - 2];
+                                if (prevCursor) {
+                                    loadComments({
+                                        search: searchTerm,
+                                        reportedOnly,
+                                        cursor: prevCursor,
+                                        direction: 'prev',
+                                        forward: false,
+                                    });
+                                }
                             }}
                             disabled={currentPageIndex <= 1 || loading}
                             className="premium-button"
@@ -267,12 +289,19 @@ export default function Comments() {
                             Previous
                         </button>
 
-                        <span className="text-sm text-slate-300">Page {currentPageIndex}</span>
+                        <span className="text-sm text-muted">Page {currentPageIndex}</span>
 
                         <button
                             onClick={() => {
-                                const lastVisible = pageSnapshots[pageSnapshots.length - 1];
-                                if (lastVisible) fetchPage(lastVisible, 'next');
+                                if (lastId) {
+                                    loadComments({
+                                        search: searchTerm,
+                                        reportedOnly,
+                                        cursor: lastId,
+                                        direction: 'next',
+                                        forward: true,
+                                    });
+                                }
                             }}
                             disabled={!hasMore || loading}
                             className="premium-button"

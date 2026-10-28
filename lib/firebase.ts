@@ -2,9 +2,6 @@
 
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
-import { getFunctions } from 'firebase/functions';
-import { getStorage } from 'firebase/storage';
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -35,12 +32,7 @@ const app = isBrowser && hasClientFirebaseConfig
   ? (!getApps().length ? initializeApp(firebaseConfig) : getApp())
   : (null as any);
 
-// Avoid initializing browser SDK services during SSR/build-time evaluation.
-const db = app ? getFirestore(app) : (null as any);
 const auth = app ? getAuth(app) : (null as any);
-const functions = app ? getFunctions(app, 'asia-east1') : (null as any);
-const storage = app ? getStorage(app) : (null as any);
 
-export { app, db, auth, functions, storage }; // ✅ named exports
+export { app, auth };
 export { hasClientFirebaseConfig, missingClientFirebaseEnvVars };
-export default db; // ✅ default export for dynamic import

@@ -1,31 +1,24 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { db } from '../lib/firebase';
-import {
-  collection,
-  getDocs,
-  query,
-  orderBy,
-  limit,
-  startAfter,
-  endBefore,
-  doc,
-  updateDoc,
-  deleteDoc
-} from 'firebase/firestore';
+import { onAuthStateChanged } from 'firebase/auth';
+import { adminFetch } from '../lib/adminFetch';
+import { auth } from '../lib/firebase';
+import ThemeToggle from '../components/ThemeToggle';
 import { useRouter } from 'next/router';
 
 export default function Posts() {
   const router = useRouter();
-  const postsPerPage = 10;
 
   const [posts, setPosts] = useState([]);
   const [editingPost, setEditingPost] = useState(null);
   const [updatedTitle, setUpdatedTitle] = useState('');
   const [updatedContent, setUpdatedContent] = useState('');
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [selected, setSelected] = useState<string[]>([]);
 
-  const [pageSnapshots, setPageSnapshots] = useState([]);
+  const [pageStarts, setPageStarts] = useState<string[]>([]);
+  const [lastId, setLastId] = useState<string | null>(null);
   const [currentPageIndex, setCurrentPageIndex] = useState(0);
   const [hasMore, setHasMore] = useState(true);
 
@@ -34,137 +27,81 @@ export default function Posts() {
   const [activeSortField, setActiveSortField] = useState<'createdAt' | 'timestamp'>('createdAt');
 
   useEffect(() => {
-    if (!db) {
+    if (!auth) {
+      setError('Firebase client is not configured.');
       setLoading(false);
       return;
     }
-    if (searchTerm === '') {
-      fetchFirstPage();
-    } else {
-      fetchSearchResults(searchTerm);
-    }
+
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (!user) {
+        setPosts([]);
+        setError('Sign in again to load posts.');
+        setLoading(false);
+        return;
+      }
+      loadPosts({ search: searchTerm, forward: true, isFirstPage: true });
+    });
+
+    return unsubscribe;
   }, [searchTerm]);
 
-  const fetchFirstPage = async () => {
-    if (!db) return;
+  const loadPosts = async ({
+    search = '',
+    cursor = '',
+    direction = 'next',
+    forward = true,
+    isFirstPage = false,
+  }: {
+    search?: string;
+    cursor?: string;
+    direction?: 'next' | 'prev';
+    forward?: boolean;
+    isFirstPage?: boolean;
+  }) => {
     setLoading(true);
+    setError('');
     try {
-      const primaryQuery = query(
-        collection(db, 'posts'),
-        orderBy('createdAt', 'desc'),
-        limit(postsPerPage + 1)
-      );
-      const primarySnapshot = await getDocs(primaryQuery);
+      const params = new URLSearchParams({ sort: activeSortField });
+      if (search) params.set('search', search);
+      if (cursor) {
+        params.set('cursor', cursor);
+        params.set('direction', direction);
+      }
+      const data = await adminFetch<{
+        posts: never[];
+        sortField?: 'createdAt' | 'timestamp';
+        lastId?: string | null;
+        firstId?: string | null;
+        hasMore?: boolean;
+      }>(`/api/posts/?${params}`);
 
-      if (primarySnapshot.empty) {
-        const fallbackQuery = query(
-          collection(db, 'posts'),
-          orderBy('timestamp', 'desc'),
-          limit(postsPerPage + 1)
-        );
-        const fallbackSnapshot = await getDocs(fallbackQuery);
-        setActiveSortField('timestamp');
-        await processSnapshot(fallbackSnapshot, true, true);
+      setPosts(data.posts || []);
+      setSelected([]);
+      setActiveSortField(data.sortField || 'createdAt');
+      setLastId(data.lastId || null);
+      setHasMore(Boolean(data.hasMore));
+
+      if (forward) {
+        if (isFirstPage) {
+          setPageStarts(data.firstId ? [data.firstId] : []);
+          setCurrentPageIndex(data.firstId ? 1 : 0);
+        } else if (data.firstId) {
+          setPageStarts((prev) => [...prev, data.firstId]);
+          setCurrentPageIndex((prev) => prev + 1);
+        }
       } else {
-        setActiveSortField('createdAt');
-        await processSnapshot(primarySnapshot, true, true);
+        setPageStarts((prev) => prev.slice(0, -1));
+        setCurrentPageIndex((prev) => Math.max(prev - 1, 1));
+        setHasMore(true);
       }
-    } catch (error) {
-      console.error('Failed to fetch posts:', error);
+    } catch (fetchError) {
+      console.error('Failed to fetch posts:', fetchError);
       setPosts([]);
+      setError(fetchError instanceof Error ? fetchError.message : 'Failed to fetch posts');
+    } finally {
       setLoading(false);
     }
-  };
-
-  const fetchSearchResults = async (term) => {
-    if (!db) return;
-    setLoading(true);
-    try {
-      const snapshot = await getDocs(collection(db, 'posts'));
-      const filteredDocs = snapshot.docs.filter(doc =>
-          doc.data().title?.toLowerCase().includes(term.toLowerCase())
-      );
-      const fakeSnapshot = { docs: filteredDocs.slice(0, postsPerPage + 1) };
-      await processSnapshot(fakeSnapshot, true, true);
-    } catch (error) {
-      console.error('Failed to search posts:', error);
-      setPosts([]);
-      setLoading(false);
-    }
-  };
-
-  const fetchPage = async (cursorDoc, direction = 'next') => {
-    if (!cursorDoc || !db) return;
-    setLoading(true);
-
-    const q = query(
-        collection(db, 'posts'),
-        orderBy(activeSortField, 'desc'),
-        direction === 'next' ? startAfter(cursorDoc) : endBefore(cursorDoc),
-        limit(postsPerPage + 1)
-    );
-
-    try {
-      const snapshot = await getDocs(q);
-      await processSnapshot(snapshot, direction === 'next');
-    } catch (error) {
-      console.error('Failed to fetch paginated posts:', error);
-      setLoading(false);
-    }
-  };
-
-  const processSnapshot = async (snapshot, forward = true, isFirstPage = false) => {
-    if (!db) return;
-    const docs = snapshot.docs;
-    const hasExtra = docs.length > postsPerPage;
-    const slicedDocs = hasExtra ? docs.slice(0, postsPerPage) : docs;
-    const newHasMore = hasExtra;
-
-    const reportSnapshot = await getDocs(collection(db, 'reports'));
-    const commentSnapshot = await getDocs(collection(db, 'comments'));
-
-    const reportCounts = {};
-    reportSnapshot.docs.forEach((doc) => {
-      const data = doc.data();
-      if (data.type === 'post' && data.targetId) {
-        reportCounts[data.targetId] = (reportCounts[data.targetId] || 0) + 1;
-      }
-    });
-
-    const commentCounts = {};
-    commentSnapshot.docs.forEach((doc) => {
-      const data = doc.data();
-      if (data.postId) {
-        commentCounts[data.postId] = (commentCounts[data.postId] || 0) + 1;
-      }
-    });
-
-    const postsData = slicedDocs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-      reportCount: reportCounts[doc.id] || 0,
-      commentCount: commentCounts[doc.id] || 0,
-      likeCount: doc.data().likeList?.length || 0
-    }));
-
-    postsData.sort((a, b) => b.reportCount - a.reportCount);
-    setPosts(postsData);
-
-    if (forward) {
-      if (!isFirstPage) {
-        setPageSnapshots(prev => [...prev, slicedDocs[slicedDocs.length - 1]]);
-        setCurrentPageIndex(prev => prev + 1);
-      } else {
-        setPageSnapshots([slicedDocs[slicedDocs.length - 1]]);
-        setCurrentPageIndex(1);
-      }
-      setHasMore(newHasMore);
-    } else {
-      setCurrentPageIndex(prev => Math.max(prev - 1, 1));
-      setHasMore(true);
-    }
-
-    setLoading(false);
   };
 
   const handleEdit = (post) => {
@@ -191,27 +128,64 @@ export default function Posts() {
   };
 
   const handleUpdate = async () => {
-    if (!editingPost || !db) return;
-    await updateDoc(doc(db, 'posts', editingPost.id), {
-      title: updatedTitle,
-      content: updatedContent,
-    });
-    setEditingPost(null);
-    fetchFirstPage();
+    if (!editingPost) return;
+    try {
+      await adminFetch('/api/posts/', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          id: editingPost.id,
+          title: updatedTitle,
+          content: updatedContent,
+        }),
+      });
+      setEditingPost(null);
+      loadPosts({ search: searchTerm, forward: true, isFirstPage: true });
+    } catch (updateError) {
+      setError(updateError instanceof Error ? updateError.message : 'Failed to update post');
+    }
+  };
+
+  const visibleIds = posts.map((post) => post.id);
+  const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selected.includes(id));
+
+  const toggleAll = () => {
+    setSelected(allSelected ? [] : visibleIds);
+  };
+
+  const toggleOne = (id) => {
+    setSelected((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+  };
+
+  const handleBulkDelete = async () => {
+    if (selected.length === 0) return;
+    if (!confirm(`Delete ${selected.length} selected post${selected.length === 1 ? '' : 's'}?`)) return;
+    try {
+      await adminFetch('/api/posts/', {
+        method: 'DELETE',
+        body: JSON.stringify({ ids: selected }),
+      });
+      setSelected([]);
+      loadPosts({ search: searchTerm, forward: true, isFirstPage: true });
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : 'Failed to delete posts');
+    }
   };
 
   const handleDelete = async (id) => {
-    if (!db) return;
-    if (!confirm("Are you sure you want to delete this post?")) return;
-    await deleteDoc(doc(db, 'posts', id));
-    fetchFirstPage();
+    if (!confirm('Are you sure you want to delete this post?')) return;
+    try {
+      await adminFetch(`/api/posts/?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+      loadPosts({ search: searchTerm, forward: true, isFirstPage: true });
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : 'Failed to delete post');
+    }
   };
 
   return (
       <main className="premium-shell relative overflow-auto">
         {loading ? (
-            <div className="flex flex-col items-center justify-center gap-4 text-white mt-40">
-              <svg className="animate-spin h-10 w-10 text-white" viewBox="0 0 24 24">
+            <div className="mt-40 flex flex-col items-center justify-center gap-4">
+              <svg className="h-10 w-10 animate-spin text-accent" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
               </svg>
@@ -219,13 +193,17 @@ export default function Posts() {
             </div>
         ) : (
             <div className="premium-card mx-auto max-w-7xl w-full p-6">
-              <div className="mb-4 flex items-center justify-between">
+              <div className="page-toolbar">
                 <Link href="/dashboard" className="premium-button-secondary">
                   ← Dashboard
                 </Link>
+                <ThemeToggle />
               </div>
-              <div className="flex justify-between items-center mb-4">
-                <h1 className="premium-title">Rockzy Posts</h1>
+              <div className="page-toolbar">
+                <div>
+                  <h1 className="premium-title">Rockzy Posts</h1>
+                  <p className="premium-subtitle">Review, edit, and remove published posts.</p>
+                </div>
                 <div className="flex items-center gap-2">
                   <input
                       type="text"
@@ -248,46 +226,62 @@ export default function Posts() {
                 </div>
               </div>
 
-              {!db && (
-                <div className="mb-4 rounded-xl border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
-                  Firebase client is not configured. Set `NEXT_PUBLIC_FIREBASE_*` environment variables.
+              {error && <div className="notice">{error}</div>}
+
+              {selected.length > 0 && (
+                <div className="bulk-bar">
+                  <span className="text-sm font-medium">{selected.length} selected</span>
+                  <button onClick={handleBulkDelete} className="danger-button">Delete selected</button>
                 </div>
               )}
 
-              <table className="w-full border-collapse overflow-hidden rounded-xl border border-white/10 text-sm">
+              <div className="overflow-x-auto">
+              <table className="data-table">
                 <thead>
-                <tr className="bg-slate-800/70 text-left text-slate-200">
-                  <th className="p-2 border border-white/10">Title</th>
-                  <th className="p-2 border border-white/10">Content</th>
-                  <th className="p-2 border border-white/10">Images</th>
-                  <th className="p-2 border border-white/10">Date</th>
-                  <th className="p-2 border border-white/10">Reports</th>
-                  <th className="p-2 border border-white/10">Likes</th>
-                  <th className="p-2 border border-white/10">Comments</th>
-                  <th className="p-2 border border-white/10">Actions</th>
+                <tr>
+                  <th>
+                    <input className="check" type="checkbox" checked={allSelected} onChange={toggleAll} aria-label="Select all posts" />
+                  </th>
+                  <th>Title</th>
+                  <th>Content</th>
+                  <th>Images</th>
+                  <th>Date</th>
+                  <th>Reports</th>
+                  <th>Likes</th>
+                  <th>Comments</th>
+                  <th>Actions</th>
                 </tr>
                 </thead>
                 <tbody>
                 {posts.map(post => (
-                    <tr key={post.id} className="align-top text-slate-200 hover:bg-slate-800/60">
-                      <td className="p-2 border border-white/10">{post.title}</td>
-                      <td className="p-2 border border-white/10">{post.content}</td>
-                      <td className="p-2 border border-white/10">
+                    <tr key={post.id} className={selected.includes(post.id) ? 'selected' : undefined}>
+                      <td>
+                        <input
+                          className="check"
+                          type="checkbox"
+                          checked={selected.includes(post.id)}
+                          onChange={() => toggleOne(post.id)}
+                          aria-label={`Select ${post.title || 'post'}`}
+                        />
+                      </td>
+                      <td className="font-medium">{post.title}</td>
+                      <td className="clamp-3 max-w-xs">{post.content}</td>
+                      <td>
                         {getPostImages(post).length > 0 ? (
                             <div className="flex flex-wrap gap-2">
                               {getPostImages(post).map((url, index) => (
-                                  <img key={index} src={url} alt={`img-${index}`} className="h-16 w-16 rounded-lg border border-white/10 object-cover" />
+                                  <img key={index} src={url} alt={`img-${index}`} className="h-16 w-16 rounded-lg object-cover" />
                               ))}
                             </div>
                         ) : (
-                            <span className="text-slate-500">No Images</span>
+                            <span className="text-faint">No images</span>
                         )}
                       </td>
-                      <td className="p-2 border border-white/10">{getPostDate(post)}</td>
-                      <td className="p-2 border border-white/10">{post.reportCount}</td>
-                      <td className="p-2 border border-white/10">{post.likeCount}</td>
-                      <td className="p-2 border border-white/10">{post.commentCount}</td>
-                      <td className="p-2 border border-white/10">
+                      <td className="whitespace-nowrap text-muted">{getPostDate(post)}</td>
+                      <td>{post.reportCount}</td>
+                      <td>{post.likeCount}</td>
+                      <td>{post.commentCount}</td>
+                      <td>
                         <div className="flex gap-2">
                           <button onClick={() => handleView(post.id)} className="premium-button-secondary">View</button>
                           <button onClick={() => handleEdit(post)} className="premium-button">Edit</button>
@@ -298,12 +292,15 @@ export default function Posts() {
                 ))}
                 </tbody>
               </table>
+              </div>
 
               <div className="mt-6 flex items-center justify-between">
                 <button
                     onClick={() => {
-                      const prevCursor = pageSnapshots[currentPageIndex - 2];
-                      if (prevCursor) fetchPage(prevCursor, 'prev');
+                      const prevCursor = pageStarts[currentPageIndex - 2];
+                      if (prevCursor) {
+                        loadPosts({ search: searchTerm, cursor: prevCursor, direction: 'prev', forward: false });
+                      }
                     }}
                     disabled={currentPageIndex <= 1 || loading}
                     className="premium-button"
@@ -312,8 +309,9 @@ export default function Posts() {
                 </button>
                 <button
                     onClick={() => {
-                      const lastVisible = pageSnapshots[pageSnapshots.length - 1];
-                      if (lastVisible) fetchPage(lastVisible, 'next');
+                      if (lastId) {
+                        loadPosts({ search: searchTerm, cursor: lastId, direction: 'next', forward: true });
+                      }
                     }}
                     disabled={!hasMore || loading}
                     className="premium-button"
@@ -325,7 +323,7 @@ export default function Posts() {
               {editingPost && (
                   <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
                     <div className="premium-card w-full max-w-md space-y-4 p-6">
-                      <h2 className="text-lg font-bold text-white">Edit Post</h2>
+                      <h2 className="text-lg font-bold">Edit Post</h2>
                       <input
                           value={updatedTitle}
                           onChange={(e) => setUpdatedTitle(e.target.value)}

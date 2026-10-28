@@ -1,7 +1,9 @@
 import Head from 'next/head';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { getAuth, signOut } from 'firebase/auth';
+import { signOut } from 'firebase/auth';
+import { auth } from '../lib/firebase';
+import ThemeToggle from '../components/ThemeToggle';
 
 export default function Dashboard() {
   const router = useRouter();
@@ -29,7 +31,7 @@ export default function Dashboard() {
   const handleLogout = async () => {
     try {
       localStorage.removeItem('isAdmin');
-      await signOut(getAuth()); // optional, for clearing Firebase session
+      if (auth) await signOut(auth);
       await router.push('/');
     } catch (err) {
       console.error('Logout error:', err);
@@ -50,9 +52,12 @@ export default function Dashboard() {
                 Fast moderation controls with a cleaner, accessible workspace.
               </p>
             </div>
-            <button onClick={handleLogout} className="danger-button">
-              Logout
-            </button>
+            <div className="flex items-center gap-2">
+              <ThemeToggle />
+              <button onClick={handleLogout} className="danger-button">
+                Logout
+              </button>
+            </div>
           </div>
 
           <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -60,9 +65,9 @@ export default function Dashboard() {
               <Link href={href} key={label} className="group">
                 <article className="premium-card h-full p-6 transition hover:-translate-y-1 hover:border-indigo-400/40">
                   <p className="mb-4 text-3xl">{icon}</p>
-                  <h2 className="mb-2 text-xl font-semibold text-white">{label}</h2>
-                  <p className="text-sm text-slate-300">{description}</p>
-                  <p className="mt-5 text-sm font-medium text-indigo-300 group-hover:text-indigo-200">
+                  <h2 className="mb-2 text-xl font-semibold">{label}</h2>
+                  <p className="text-sm text-muted">{description}</p>
+                  <p className="mt-5 text-sm font-medium text-accent">
                     Open section →
                   </p>
                 </article>

@@ -2,8 +2,9 @@ import Head from 'next/head';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 
-import { signInWithEmailAndPassword } from 'firebase/auth';
+import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { auth, missingClientFirebaseEnvVars } from '../lib/firebase';
+import ThemeToggle from '../components/ThemeToggle';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -36,7 +37,7 @@ export default function LoginPage() {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const token = await userCredential.user.getIdToken();
 
-      const res = await fetch('/api/check-admin', {
+      const res = await fetch('/api/check-admin/', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -49,6 +50,7 @@ export default function LoginPage() {
         localStorage.setItem('isAdmin', 'true');
         await router.push('/dashboard');
       } else {
+        await signOut(auth);
         alert('Access denied. You are not an admin.');
       }
     } catch (err: any) {
@@ -66,9 +68,10 @@ export default function LoginPage() {
       </Head>
       <main className="premium-shell flex items-center justify-center">
         <div className="premium-card w-full max-w-md p-8 sm:p-10">
-          <p className="mb-3 inline-flex rounded-full border border-indigo-400/30 bg-indigo-500/10 px-3 py-1 text-xs font-medium text-indigo-200">
-            Rockzy Admin Portal
-          </p>
+          <div className="mb-6 flex items-center justify-between gap-3">
+            <p className="chip">Rockzy Admin Portal</p>
+            <ThemeToggle />
+          </div>
           <h1 className="premium-title mb-1">Welcome back</h1>
           <p className="premium-subtitle mb-8">
             Sign in to manage posts, comments, and moderation actions.
@@ -76,7 +79,7 @@ export default function LoginPage() {
 
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
-              <label className="mb-2 block text-sm font-medium text-slate-200">Email</label>
+              <label className="mb-2 block text-sm font-medium">Email</label>
               <input
                 type="email"
                 className="premium-input"
@@ -87,7 +90,7 @@ export default function LoginPage() {
               />
             </div>
             <div>
-              <label className="mb-2 block text-sm font-medium text-slate-200">Password</label>
+              <label className="mb-2 block text-sm font-medium">Password</label>
               <input
                 type="password"
                 className="premium-input"
@@ -102,7 +105,7 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <p className="mt-6 text-center text-xs text-slate-400">
+          <p className="mt-6 text-center text-xs text-faint">
             © 2026 Rockzy Admin Panel. All rights reserved.
           </p>
         </div>
