@@ -1,8 +1,9 @@
 import { randomUUID } from 'crypto';
 import type { NextApiRequest, NextApiResponse } from 'next';
-import type { Firestore, Query, QueryDocumentSnapshot } from 'firebase-admin/firestore';
+import type { Firestore, Query } from 'firebase-admin/firestore';
 import { getStorage } from 'firebase-admin/storage';
 import { adminApp } from '../../../lib/firebaseAdmin';
+import { postReportTargetId, summarizeReport } from '../../../lib/postReports';
 import { isAdminFailure, requireAdmin } from '../../../lib/requireAdmin';
 import { serializeFirestore } from '../../../lib/serializeFirestore';
 
@@ -43,6 +44,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 }
 
 async function listPosts(db: Firestore, req: NextApiRequest, res: NextApiResponse) {
+  if (req.query.reportedOnly === '1') {
+    return listReportedPosts(db, req, res);
+  }
+
   const search = typeof req.query.search === 'string' ? req.query.search.trim().toLowerCase() : '';
   const cursor = typeof req.query.cursor === 'string' ? req.query.cursor : '';
   const direction = req.query.direction === 'prev' ? 'prev' : 'next';
@@ -117,8 +122,55 @@ async function resolveSortField(
   return probe.empty ? 'timestamp' : 'createdAt';
 }
 
+async function listReportedPosts(db: Firestore, req: NextApiRequest, res: NextApiResponse) {
+  const search = typeof req.query.search === 'string' ? req.query.search.trim().toLowerCase() : '';
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const reportSnap = await db.collection('reports').get();
+  const reportsByPost = new Map<string, ReturnType<typeof summarizeReport>[]>();
+
+  reportSnap.docs.forEach((report) => {
+    const postId = postReportTargetId(report.data());
+    if (!postId) return;
+    const current = reportsByPost.get(postId) || [];
+    current.push(summarizeReport(report));
+    reportsByPost.set(postId, current);
+  });
+
+  const ids = [...reportsByPost.keys()];
+  const snaps = [];
+  for (let index = 0; index < ids.length; index += 10) {
+    const refs = ids.slice(index, index + 10).map((id) => db.collection('posts').doc(id));
+    if (refs.length > 0) snaps.push(...await db.getAll(...refs));
+  }
+
+  const reportCounts = Object.fromEntries([...reportsByPost.entries()].map(([id, reports]) => [id, reports.length]));
+  const posts = snaps
+    .filter((post) => post.exists)
+    .map((post) => ({
+      ...toPost(post, reportCounts, {}),
+      reports: reportsByPost.get(post.id) || [],
+    }))
+    .filter((post) => {
+      if (!search) return true;
+      const title = String(post.title || '').toLowerCase();
+      const content = String(post.content || '').toLowerCase();
+      return title.includes(search) || content.includes(search);
+    })
+    .sort((a, b) => b.reportCount - a.reportCount || Number(b.createdAt || b.timestamp || 0) - Number(a.createdAt || a.timestamp || 0));
+
+  const start = (page - 1) * PAGE_SIZE;
+  const pageItems = posts.slice(start, start + PAGE_SIZE);
+
+  return res.status(200).json({
+    posts: pageItems,
+    totalCount: posts.length,
+    page,
+    hasMore: start + PAGE_SIZE < posts.length,
+  });
+}
+
 function toPost(
-  post: QueryDocumentSnapshot,
+  post: { id: string; data: () => Record<string, unknown> },
   reportCounts: Record<string, number>,
   commentCounts: Record<string, number>
 ) {

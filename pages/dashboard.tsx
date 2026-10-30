@@ -21,6 +21,12 @@ export default function Dashboard() {
       icon: '💬',
     },
     {
+      label: 'Reported Posts',
+      description: 'Review posts that users have reported.',
+      href: '/reported-posts',
+      icon: '🚩',
+    },
+    {
       label: 'Create Post',
       description: 'Publish announcements and featured updates.',
       href: '/create-post',
@@ -60,7 +66,7 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {options.map(({ label, description, href, icon }) => (
               <Link href={href} key={label} className="group">
                 <article className="premium-card h-full p-6 transition hover:-translate-y-1 hover:border-indigo-400/40">

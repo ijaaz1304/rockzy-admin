@@ -12,6 +12,7 @@ export default function PostDetail() {
   const [post, setPost] = useState<any>(null);
   const [comments, setComments] = useState<any[]>([]);
   const [reportCounts, setReportCounts] = useState<Record<string, number>>({});
+  const [reports, setReports] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -34,11 +35,17 @@ export default function PostDetail() {
     setLoading(true);
     setError('');
     try {
-      const data = await adminFetch<{ post: any; comments: any[]; reportCounts: Record<string, number> }>(
+      const data = await adminFetch<{
+        post: any;
+        comments: any[];
+        reports?: any[];
+        reportCounts: Record<string, number>;
+      }>(
         `/api/posts/${postId}/`
       );
       setPost(data.post);
       setComments(data.comments || []);
+      setReports(data.reports || []);
       setReportCounts(data.reportCounts || {});
     } catch (fetchError) {
       console.error('Failed to fetch post detail:', fetchError);
@@ -55,7 +62,7 @@ export default function PostDetail() {
     try {
       if (target === 'post') {
         await adminFetch(`/api/posts/?id=${encodeURIComponent(ids[0])}`, { method: 'DELETE' });
-        await router.push('/posts');
+        await router.push(router.query.from === 'reported-posts' ? '/reported-posts' : '/posts');
         return;
       }
       if (target === 'comment') {
@@ -92,12 +99,15 @@ export default function PostDetail() {
     );
   }
 
+  const backHref = router.query.from === 'reported-posts' ? '/reported-posts' : '/posts';
+  const backLabel = router.query.from === 'reported-posts' ? '← Reported Posts' : '← Posts';
+
   if (!post) {
     return (
       <main className="premium-shell">
         <div className="premium-card p-6">
           <div className="page-toolbar">
-            <Link href="/posts" className="premium-button-secondary">← Posts</Link>
+            <Link href={backHref} className="premium-button-secondary">{backLabel}</Link>
             <ThemeToggle />
           </div>
           <div className="notice">{error || 'Post not found'}</div>
@@ -110,7 +120,7 @@ export default function PostDetail() {
     <main className="premium-shell">
       <div className="mx-auto max-w-5xl">
       <div className="page-toolbar">
-        <Link href="/posts" className="premium-button-secondary">← Posts</Link>
+        <Link href={backHref} className="premium-button-secondary">{backLabel}</Link>
         <ThemeToggle />
       </div>
       {error && <div className="notice">{error}</div>}
@@ -134,7 +144,20 @@ export default function PostDetail() {
         )}
 
         <p>Likes: {post.likeCount || 0}</p>
-        <p className="text-muted">Reports: {reportCounts[post.id] || 0}</p>
+        <p className="text-muted">Reports: {post.reportCount || reportCounts[post.id] || 0}</p>
+        {reports.length > 0 && (
+          <div className="mt-4 space-y-2">
+            {reports.map((report) => (
+              <div key={report.id} className="panel-2 px-3 py-2 text-sm">
+                <p>{report.reason}</p>
+                <p className="text-xs text-faint">
+                  {report.reportedBy ? `Reported by ${report.reportedBy}` : 'Reporter not recorded'}
+                  {report.createdAt ? ` · ${new Date(report.createdAt).toLocaleString()}` : ''}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
 
         <button
           onClick={() => handleDelete('post', [post.id])}

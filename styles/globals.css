@@ -106,6 +106,90 @@
     box-shadow: 0 0 0 3px var(--accent-soft);
   }
 
+  .password-field {
+    position: relative;
+  }
+
+  .file-picker {
+    position: relative;
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 0.75rem;
+    border-radius: 0.75rem;
+    border: 1px solid var(--line);
+    background: var(--input);
+    padding: 0.45rem 0.75rem;
+    cursor: pointer;
+  }
+
+  .file-picker input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+  }
+
+  .file-picker.is-disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+
+  .file-picker-button {
+    flex-shrink: 0;
+    border-radius: 0.5rem;
+    background: #6366f1;
+    color: white;
+    @apply px-3 py-2 text-sm font-medium;
+  }
+
+  .file-picker-status {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--muted);
+    @apply text-sm;
+  }
+
+  .file-picker-status.is-chosen {
+    color: var(--text);
+  }
+
+  .password-field .premium-input {
+    padding-right: 2.75rem;
+  }
+
+  .password-toggle {
+    position: absolute;
+    top: 50%;
+    right: 0.45rem;
+    display: flex;
+    height: 2rem;
+    width: 2rem;
+    align-items: center;
+    justify-content: center;
+    transform: translateY(-50%);
+    border: 0;
+    border-radius: 0.5rem;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+  }
+
+  .password-toggle:hover,
+  .password-toggle:focus-visible {
+    color: var(--text);
+    background: var(--accent-soft);
+    outline: none;
+  }
+
+  .password-toggle svg {
+    height: 1.15rem;
+    width: 1.15rem;
+  }
+
   .premium-button,
   .premium-button-secondary,
   .danger-button,

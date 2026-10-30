@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { adminFetch } from '../lib/adminFetch';
 import ThemeToggle from '../components/ThemeToggle';
@@ -6,21 +6,46 @@ import ThemeToggle from '../components/ThemeToggle';
 export default function CreatePost() {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
-  const [images, setImages] = useState<File[]>([]);
+  const [images, setImages] = useState<Array<{ file: File; url: string }>>([]);
+  const imagesRef = useRef(images);
+  imagesRef.current = images;
   const [loading, setLoading] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
   const [error, setError] = useState('');
 
+  useEffect(() => {
+    return () => {
+      imagesRef.current.forEach((image) => URL.revokeObjectURL(image.url));
+    };
+  }, []);
+
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (files) {
-      const fileArray = Array.from(files);
-      if (fileArray.length > 2) {
-        alert('You can upload a maximum of 2 images.');
-        return;
-      }
-      setImages(fileArray);
+    const picked = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (picked.length === 0) return;
+
+    const room = 2 - images.length;
+    if (room <= 0) {
+      alert('You can upload a maximum of 2 images.');
+      return;
     }
+
+    const accepted = picked.slice(0, room);
+    if (picked.length > room) {
+      alert('You can upload a maximum of 2 images. Extra photos were not added.');
+    }
+    setImages((current) => [
+      ...current,
+      ...accepted.map((file) => ({ file, url: URL.createObjectURL(file) })),
+    ]);
+  };
+
+  const removeImage = (index: number) => {
+    setImages((current) => {
+      const removed = current[index];
+      if (removed) URL.revokeObjectURL(removed.url);
+      return current.filter((_, imageIndex) => imageIndex !== index);
+    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -32,7 +57,7 @@ export default function CreatePost() {
     setError('');
 
     try {
-      const imagePayloads = await Promise.all(images.map(readImage));
+      const imagePayloads = await Promise.all(images.map((image) => readImage(image.file)));
       await adminFetch('/api/posts/', {
         method: 'POST',
         body: JSON.stringify({
@@ -44,7 +69,10 @@ export default function CreatePost() {
 
       setTitle('');
       setContent('');
-      setImages([]);
+      setImages((current) => {
+        current.forEach((image) => URL.revokeObjectURL(image.url));
+        return [];
+      });
       setSuccessMessage('Post created successfully.');
     } catch (err) {
       console.error('Error adding post:', err);
@@ -119,16 +147,49 @@ export default function CreatePost() {
                       className="premium-input min-h-40"
                       required
                   />
-                  <input
+                  <label className={`file-picker ${images.length >= 2 ? 'is-disabled' : ''}`}>
+                    <input
                       type="file"
                       accept="image/*"
                       multiple
                       onChange={handleImageChange}
-                      className="premium-input file:mr-4 file:rounded-lg file:border-0 file:bg-indigo-500 file:px-3 file:py-2 file:text-sm file:font-medium file:text-white"
-                  />
+                      disabled={images.length >= 2}
+                    />
+                    <span className="file-picker-button">
+                      {images.length >= 2 ? '2 files chosen' : 'Choose files'}
+                    </span>
+                    <span className={`file-picker-status ${images.length > 0 ? 'is-chosen' : ''}`}>
+                      {images.length === 0
+                        ? 'No file chosen'
+                        : images.map((image) => image.file.name).join(', ')}
+                    </span>
+                  </label>
                   <p className="text-sm text-faint">
-                    {images.length}/2 image(s) selected
+                    {images.length}/2 image(s) selected. You can add them one at a time.
                   </p>
+                  {images.length > 0 && (
+                    <div className="grid grid-cols-2 gap-3">
+                      {images.map((image, index) => (
+                        <div key={`${image.file.name}-${image.file.lastModified}-${index}`} className="panel overflow-hidden">
+                          <img
+                            src={image.url}
+                            alt={image.file.name}
+                            className="h-36 w-full object-cover"
+                          />
+                          <div className="flex items-center justify-between gap-2 px-3 py-2">
+                            <p className="truncate text-xs text-muted">{image.file.name}</p>
+                            <button
+                              type="button"
+                              onClick={() => removeImage(index)}
+                              className="text-xs font-semibold text-accent"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
                   <button type="submit" className="premium-button">
                     Submit

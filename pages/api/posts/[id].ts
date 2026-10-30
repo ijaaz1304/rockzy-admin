@@ -1,4 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
+import { postReportTargetId, summarizeReport } from '../../../lib/postReports';
 import { isAdminFailure, requireAdmin } from '../../../lib/requireAdmin';
 import { serializeFirestore } from '../../../lib/serializeFirestore';
 
@@ -29,10 +30,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     ]);
 
     const reportCounts: Record<string, number> = {};
+    const postReports = [];
     reportSnap.docs.forEach((report) => {
-      const targetId = report.data().targetId;
-      if (typeof targetId === 'string') {
+      const data = report.data();
+      const postTarget = postReportTargetId(data);
+      if (postTarget === id) postReports.push(summarizeReport(report));
+      const targetId = typeof data.targetId === 'string' ? data.targetId : '';
+      if (targetId) {
         reportCounts[targetId] = (reportCounts[targetId] || 0) + 1;
+      }
+      if (postTarget && postTarget !== targetId) {
+        reportCounts[postTarget] = (reportCounts[postTarget] || 0) + 1;
       }
     });
 
@@ -72,8 +80,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         id: postDoc.id,
         ...postData,
         likeCount: postLikes.length || Number(postData.likeCount) || 0,
+        reportCount: postReports.length,
       },
       comments,
+      reports: postReports,
       reportCounts,
     });
   } catch (error) {
